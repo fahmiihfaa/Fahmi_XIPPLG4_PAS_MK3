@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<!-- Global site tag (gtag.js) - Google Analytics -->
+	<script async src="https://www.googletagmanager.com/gtag/js?id=UA-121647007-3"></script>
+	<script>
+		window.dataLayer = window.dataLayer || [];
+		function gtag() { dataLayer.push(arguments); }
+		gtag('js', new Date());
+
+		gtag('config', 'UA-121647007-3');
+	</script>
+
+	<meta property="og:image" content="https://tetris-90067.firebaseapp.com/img/preview.png">
+	<meta property="og:url" content="https://tetris-90067.firebaseapp.com/">
+	<meta property="og:description">
+	<meta property="og:title" content="Fahmi - Tetris">
+	<link rel="stylesheet" type="text/css" href="css/tetris.css" />
+
+	<script type="text/javascript" src="js/jquery.js"></script>
+	<script type="text/javascript" src="js/jquery-mobile.js"></script>
+	<script type="text/javascript" src="js/jquery-buzz.js"></script>
+	<script type="text/javascript" src="js/tetris-vars.js"></script>
+	<script type="text/javascript" src="js/tetris-tools.js"></script>
+	<script type="text/javascript" src="js/tetris-pieces.js"></script>
+	<script type="text/javascript" src="js/tetris-lines.js"></script>
+	<script type="text/javascript" src="js/tetris-score.js"></script>
+	<script type="text/javascript" src="js/tetris-sound.js"></script>
+
+	<script type="text/javascript">
+
+		// Fungsi untuk menginisialisasi papan permainan dan papan blok selanjutnya
+		function initBoard() {
+			// Loop untuk mengisi papan permainan dengan kotak-kotak
+			for (var y = LINES_MAX_Y, ymax = 0; y > ymax; y--) {
+				for (var x = 1, xmax = LINES_MAX_X + 1; x < xmax; x++) {
+					// Menambahkan elemen kotak dengan id unik ke papan permainan
+					$('#board').append('<div class="square" id="s-' + y + '-' + x + '"></div>');
+				}
+			}
+
+			// Loop untuk mengisi papan blok selanjutnya dengan kotak-kotak
+			for (var y = 4, ymax = 0; y > ymax; y--) {
+				for (var x = 1, xmax = 5; x < xmax; x++) {
+					// Menambahkan elemen kotak dengan id unik ke papan blok selanjutnya
+					$('#board-next').append('<div class="square" id="next-s-' + y + '-' + x + '"></div>');
+				}
+			}
+
+			// Memperbarui informasi pemain
+			refreshPlayer();
+		}
+
+
+		// Fungsi untuk mereset semua variabel dan elemen pada permainan
+		function resetAll() {
+			// Menghapus semua elemen kotak pada papan permainan dan papan blok selanjutnya
+			$('#board').find('.square').remove();
+			$('#board-next').find('.square').remove();
+
+			// Mereset nilai-nilai pemain dan permainan
+			PLAYER_LEVEL = 0;
+			PLAYER_LINES = 0;
+			PLAYER_LINES_LEVEL = 0;
+			PLAYER_SCORE = 0;
+			PLAYER_SCORE_BONUS = 0;
+			PLAYER_SPEED = PLAYER_SPEED_DEFAULT;
+
+			// Menetapkan nilai default untuk variabel PIECE_NEXT
+			PIECE_NEXT = -1;
+
+			// Mengatur status permainan dan kontrol khusus ke nilai awal
+			GAME_OVER = false;
+			GAME_PAUSE = false;
+			GAME_SPECIAL_AUTHORIZED = false;
+
+			// Memanggil fungsi initBoard() untuk menginisialisasi ulang papan permainan dan blok selanjutnya
+			initBoard();
+		}
+
+
+		// Fungsi untuk menangani kejadian saat permainan berakhir (game over)
+		function gameover() {
+			// Menghentikan semua suara permainan
+			stopAllSound();
+
+			// Memainkan suara game over
+			playGameoverSound();
+
+			// Menonaktifkan kontrol khusus dan mengatur PIECE_CONTROL ke "NULL"
+			GAME_SPECIAL_AUTHORIZED = false;
+			PIECE_CONTROL = "NULL";
+
+			// Menetapkan posisi awal untuk blok yang dinonaktifkan dan mengatur timer untuk menonaktifkannya secara berulang
+			PIECE_DISABLED_Y = 1;
+			PIECE_DISABLED_X = 1;
+			PIECE_DISABLED_TIMER = setInterval('disablePiece()', PIECE_DISABLED_DELAY);
+		}
+
+		// Fungsi untuk mengelola kejadian saat permainan dijeda atau dilanjutkan
+		function pause() {
+			// Memeriksa status permainan apakah sedang dijeda atau tidak
+			if (GAME_PAUSE) {
+				// Jika sedang dijeda, mengembalikan tampilan dan status permainan ke keadaan sebelumnya
+				$("#control div.pause").removeClass("play");
+				$('#board, #board-next').find(".square").removeClass("invisible");
+				clearMessage();
+				GAME_PAUSE = false;
+				playThemeSound();
+				PIECE_DOWN_TIMER = setInterval('pieceDown()', PLAYER_SPEED);
+				// Memulai timer untuk membuat garis-garis pada papan berkedip (jika ada)
+				if (LINES !== "") {
+					LINES_BLINK_TIMER = setInterval('blinkLines()', LINES_BLINK_DELAY);
+				}
+			} else {
+				// Jika tidak sedang dijeda, menghentikan tampilan dan status permainan serta memulai efek jeda
+				$("#control div.pause").addClass("play");
+				message("pause");
+				GAME_PAUSE = true;
+				pauseThemeSound();
+				clearInterval(PIECE_DOWN_TIMER);
+				// Menghentikan timer berkedip untuk garis-garis pada papan (jika ada)
+				if (LINES !== "") {
+					clearInterval(LINES_BLINK_TIMER);
+				}
+				// Mengubah tampilan papan permainan dan papan blok selanjutnya menjadi tidak terlihat
+				$('#board, #board-next').find(".square").addClass("invisible");
+			}
+		}
+
+		// Fungsi untuk memulai satu putaran permainan
+		function startOneGame() {
+			// Mengizinkan kontrol khusus, membersihkan pesan, dan memulai penempatan satu blok
+			GAME_SPECIAL_AUTHORIZED = true;
+			clearMessage();
+			launchOnePiece();
+		}
+
+
+		// Fungsi untuk membuat efek berkedip pada tombol bantuan (help button)
+		function blinkHelp() {
+			// Memeriksa apakah kelas 'yo' ada pada elemen tombol bantuan
+			if ($('.help-button').attr("class").indexOf("yo") > -1) {
+				// Jika ada, menghapus kelas 'yo' untuk menghentikan efek berkedip
+				$('.help-button').removeClass("yo");
+			} else {
+				// Jika tidak, menambahkan kelas 'yo' untuk memulai efek berkedip
+				$('.help-button').addClass("yo");
+			}
+		}
+
+		// Fungsi untuk membuat efek berkedip pada elemen tombol memulai permainan
+		function blinkStart() {
+			// Memeriksa apakah kelas 'invisible' ada pada elemen tombol memulai permainan
+			if ($('#home .start').attr("class").indexOf("invisible") > -1) {
+				// Jika ada, menghapus kelas 'invisible' untuk menampilkan tombol
+				$('#home .start').removeClass("invisible");
+			} else {
+				// Jika tidak, menambahkan kelas 'invisible' untuk menyembunyikan tombol
+				$('#home .start').addClass("invisible");
+			}
+		}
+
+		// Fungsi untuk membuat efek berkedip pada elemen nama pemain saat memasukkan nama
+		function blinkName() {
+			// Memeriksa apakah kelas 'invisible' ada pada elemen skor dan nama pemain
+			if ($('#home #score' + ENTER_NAME).attr("class") && $('#home #score' + ENTER_NAME).attr("class").indexOf("invisible") > -1) {
+				// Jika ada, menghapus kelas 'invisible' untuk menampilkan posisi, skor, dan nama pemain
+				$('#home #position' + ENTER_NAME + ', #home #score' + ENTER_NAME).removeClass("invisible");
+				// Memeriksa apakah elemen kontrol (control) sedang tidak ditampilkan
+				if ($("#control").css("display") === "none") {
+					// Jika tidak ditampilkan, menghapus kelas 'invisible' pada elemen nama pemain
+					$('#home #name' + ENTER_NAME).removeClass("invisible");
+				}
+			} else {
+				// Jika tidak, menambahkan kelas 'invisible' untuk menyembunyikan posisi, skor, dan nama pemain
+				$('#home #position' + ENTER_NAME + ', #home #score' + ENTER_NAME).addClass("invisible");
+				// Memeriksa apakah elemen kontrol (control) sedang tidak ditampilkan
+				if ($("#control").css("display") === "none") {
+					// Jika tidak ditampilkan, menambahkan kelas 'invisible' pada elemen nama pemain
+					$('#home #name' + ENTER_NAME).addClass("invisible");
+				}
+			}
+		}
+
+		// Fungsi untuk menampilkan tampilan halaman utama (home)
+		function home() {
+			// Menyembunyikan panel permainan dan menampilkan halaman utama
+			$("#panel").hide();
+			$("#home").show();
+
+			// Memeriksa apakah pemain sedang memasukkan nama
+			if (ENTER_NAME > -1) {
+				// Jika sedang memasukkan nama, menyembunyikan tombol memulai permainan
+				$('#home .start').addClass("invisible");
+				// Mengatur timer untuk membuat efek berkedip pada nama pemain
+				ENTER_NAME_TIMER = setInterval('blinkName()', ENTER_NAME_DELAY);
+			} else {
+				// Jika tidak memasukkan nama, mengatur timer untuk membuat efek berkedip pada tombol memulai permainan
+				GAME_START_TIMER = setInterval('blinkStart()', GAME_START_DELAY);
+				// Memainkan suara tema permainan
+				playThemeSound();
+			}
+		}
+		// Fungsi game() yang dipanggil saat permainan dimulai.
+		function game() {
+			playMoveSound();
+
+			// Menyembunyikan elemen dengan id "home" dan menampilkan elemen dengan id "panel".
+			$("#home").hide();
+			$("#panel").show();
+
+			// Menghentikan dan menghapus interval GAME_START_TIMER jika ada.
+			clearInterval(GAME_START_TIMER);
+			GAME_START_TIMER = -1;
+
+			// Mengatur ulang semua variabel dan elemen permainan ke kondisi awal.
+			resetAll();
+
+			// Memulai satu putaran permainan dengan memanggil fungsi startOneGame().
+			startOneGame();
+		}
+
+		// Fungsi yang dijalankan setelah dokumen HTML sepenuhnya dimuat.
+		$(document).ready(function () {
+			// Menyembunyikan indikator loading dari jQuery Mobile.
+			$.mobile.loading().hide();
+
+			// Memuat semua suara yang diperlukan.
+			loadAllSound();
+
+			// Mengganti teks tombol start jika permainan dimainkan pada layar sentuh.
+			if ($("#control").css("display") !== "none") {
+				$("#home .start").html(" - Touch screen to start - ");
+			}
+
+			// Event click pada elemen dengan kelas "sound".
+			$(".sound").click(function (e) {
+				e.stopPropagation();
+
+				// Mendapatkan status suara dan melakukan mute atau unmute sesuai dengan status tersebut.
+				var sound = $(this).attr("data-sound");
+				if (sound === "on") {
+					$(".sound").attr("data-sound", "off");
+					$(".sound").find("img").attr("src", "img/sound-off.png");
+					muteAllSound();
+				} else {
+					$(".sound").attr("data-sound", "on");
+					$(".sound").find("img").attr("src", "img/sound-on.png");
+					unmuteAllSound();
+				}
+			});
+
+			// Mengatur interval untuk memanggil fungsi blinkHelp().
+			HELP_TIMER = setInterval('blinkHelp()', HELP_DELAY);
+
+			// Memanggil fungsi home() untuk menampilkan tampilan beranda.
+			home();
+
+			// Event click pada elemen dengan kelas "help-button" dan elemen dengan id "help".
+			$(".help-button, #help").click(function (e) {
+				e.stopPropagation();
+				// Menampilkan atau menyembunyikan elemen dengan id "help" dan mengatur aksi jika sedang dalam permainan.
+				if ($('#help').css("display") === "none") {
+					$('#help').fadeIn("slow");
+					$(".help-button").hide();
+					if ($("#panel").css("display") !== "none" && !GAME_OVER && GAME_SPECIAL_AUTHORIZED && !GAME_PAUSE) {
+						pause();
+					}
+				} else {
+					$('#help').fadeOut("slow");
+					$(".help-button").show();
+				}
+			});
+
+			// Event click pada elemen dengan kelas "github".
+			$(".github").click(function (e) {
+				e.stopPropagation();
+			});
+
+			// Event keyup pada elemen "body" untuk mengatur aksi jika permainan sedang berlangsung.
+			$("body").keyup(function (e) {
+				if ($("#panel").css("display") !== "none") {
+					if (e.keyCode === 40) {
+						// Mengatur bonus score jika tombol panah bawah ditekan.
+						PLAYER_SCORE_BONUS = 0;
+					}
+				}
+			});
+
+			// Event tap pada elemen dengan id "home", "panel #board", dan elemen dengan id "board-next".
+			$("#home, #panel #board").tap(function (e) {
+				e.preventDefault();
+				// Mensimulasikan keydown dengan kode 83 (S) saat elemen tersebut ditekan.
+				simulateKeydown(83);
+			});
+
+			// Event swipeleft pada elemen "panel #board" untuk mensimulasikan keydown dengan kode 37 (Panah Kiri).
+			$("#panel #board").swipeleft(function (e) {
+				e.preventDefault();
+				simulateKeydown(37);
+			});
+
+			// Event swiperight pada elemen "panel #board" untuk mensimulasikan keydown dengan kode 39 (Panah Kanan).
+			$("#panel #board").swiperight(function (e) {
+				e.preventDefault();
+				simulateKeydown(39);
+			});
+
+			// Event tap pada elemen dengan id "board-next" untuk mensimulasikan keydown dengan kode 46 (Delete).
+			$("#board-next").tap(function (e) {
+				e.preventDefault();
+				simulateKeydown(46);
+			});
+
+			// Event tap pada elemen-elemen kontrol untuk mensimulasikan keydown sesuai dengan tombol yang ditekan.
+			$("#control div.move-right").tap(function (e) {
+				e.preventDefault();
+				simulateKeydown(39);
+			});
+			$("#control div.move-left").tap(function (e) {
+				e.preventDefault();
+				simulateKeydown(37);
+			});
+			$("#control div.move-down").tap(function (e) {
+				e.preventDefault();
+				simulateKeydown(40);
+			});
+			$("#control div.rotate").tap(function (e) {
+				e.preventDefault();
+				simulateKeydown(83);
+			});
+			$("#control div.pause").tap(function (e) {
+				e.preventDefault();
+				simulateKeydown(27);
+			});
+			$("#control div.view-next").tap(function (e) {
+				e.preventDefault();
+				simulateKeydown(46);
+			});
+
+			// Fungsi untuk mensimulasikan event keydown dengan kode tertentu
+			function simulateKeydown(code) {
+				var e = jQuery.Event("keydown");
+				e.keyCode = code;
+				jQuery('body').trigger(e);
+			}
+
+			// Event keydown pada elemen "body"
+			$("body").keydown(function (e) {
+				e.preventDefault();
+				e.stopPropagation();
+
+				// Menyembunyikan petunjuk jika sedang ditampilkan
+				if ($("#help").css("display") !== "none") {
+					$('#help').fadeOut("slow");
+					$(".help-button").show();
+				} else {
+					// Logika pengaturan nama pemain saat permainan dimulai
+					if ($("#panel").css("display") === "none") {
+						if (ENTER_NAME_TIMER > -1) {
+							playMoveSound();
+
+							if ($("#control").css("display") === "none") {
+								// Logika pengaturan nama saat permainan dimulai pada mode layar sentuh
+								if (e.keyCode === 8 && ENTER_NAME_POSITION > 0) {
+									ENTER_NAME_POSITION--;
+									var n = $('#home #name' + ENTER_NAME).html();
+									n = n.replaceAt(ENTER_NAME_POSITION, ENTER_NAME_DEFAULT_CHAR);
+									$('#home #name' + ENTER_NAME).html(n);
+								} else if (e.keyCode >= 65 && e.keyCode <= 90 && ENTER_NAME_POSITION < ENTER_NAME_MAX_CHAR) {
+									var n = $('#home #name' + ENTER_NAME).html();
+									n = n.replaceAt(ENTER_NAME_POSITION, String.fromCharCode(e.keyCode));
+									$('#home #name' + ENTER_NAME).html(n);
+									ENTER_NAME_POSITION++;
+								} else if (e.keyCode === 13) {
+									var n = $('#home #name' + ENTER_NAME).html();
+									$('#home #name' + ENTER_NAME).html(n.split(ENTER_NAME_DEFAULT_CHAR).join(''));
+									eval('SCORE_' + ENTER_NAME + '_NAME = n.split("' + ENTER_NAME_DEFAULT_CHAR + '").join("");');
+									clearInterval(ENTER_NAME_TIMER);
+									$('#home #position' + ENTER_NAME + ', #home #score' + ENTER_NAME + ', #home #name' + ENTER_NAME).removeClass("invisible");
+									ENTER_NAME = -1;
+									ENTER_NAME_TIMER = -1;
+									ENTER_NAME_POSITION = 0;
+									home();
+								}
+							} else {
+								// Logika pengaturan nama saat permainan dimulai pada mode desktop
+								if (e.keyCode === 13) {
+									eval('SCORE_' + ENTER_NAME + '_NAME = $("#name-input").val()');
+									$('#home #name' + ENTER_NAME).html($("#name-input").val());
+									clearInterval(ENTER_NAME_TIMER);
+									$('#home #position' + ENTER_NAME + ', #home #score' + ENTER_NAME + ', #home #name' + ENTER_NAME).removeClass("invisible");
+									$('#home #name' + ENTER_NAME).find('input').remove();
+									ENTER_NAME = -1;
+									ENTER_NAME_TIMER = -1;
+									ENTER_NAME_POSITION = 0;
+									home();
+								}
+							}
+						} else {
+							// Logika permainan saat tidak dalam mode pengaturan nama
+							game();
+						}
+					} else {
+						// Logika permainan saat dalam mode permainan (tidak dalam layar pengaturan nama)
+						if (GAME_OVER) {
+							home();
+						} else {
+							// Logika pause dan pergerakan blok
+							if ((e.keyCode === 27 || e.keyCode === 19 || e.keyCode === 13 || e.keyCode === 80) && GAME_SPECIAL_AUTHORIZED) {
+								pause();
+							}
+
+							if (PIECE_CONTROL !== "NULL" && !GAME_PAUSE) {
+								// Logika pergantian blok jika tombol Delete (46) atau Backspace (8) ditekan
+								if (e.keyCode === 46 || e.keyCode === 8) {
+									nextMasked();
+								}
+
+								// Mendapatkan informasi kontrol dari blok yang sedang dikendalikan
+								var c = getPieceControlId();
+								var y = getPieceControlPositionY();
+								var x = getPieceControlPositionX();
+								var p = getPieceControlType();
+								var m = getPieceControlRotate();
+
+								// Logika pergerakan dan rotasi blok berdasarkan tombol keyboard
+								if (e.keyCode === 40) {
+									// Tombol bawah (40): Memeriksa apakah kontrol panel sedang tidak ditampilkan, jika ya, tambahkan skor bonus
+									if ($("#control").css("display") === "none") {
+										PLAYER_SCORE_BONUS++;
+									}
+									// Mengurangkan nilai y untuk memindahkan blok ke bawah
+									y--;
+									// Memainkan suara pergerakan
+									playMoveSound();
+									// Memanggil fungsi untuk memindahkan blok ke bawah
+									pieceDown();
+								} else {
+									// Inisialisasi variabel untuk mendeteksi suara pergerakan dan rotasi
+									var moveSound = false;
+									var rotateSound = false;
+									// Logika pergerakan blok ke kanan
+									if (e.keyCode === 39) {
+										x++;
+										moveSound = true;
+									}
+									// Logika pergerakan blok ke kiri
+									else if (e.keyCode === 37) {
+										x--;
+										moveSound = true;
+									}
+									// Logika rotasi blok (sesuai dengan tombol yang ditekan)
+									else if (e.keyCode === 83 || e.keyCode === 38 || e.keyCode === 17 || e.keyCode === 32) {
+										m++;
+										if (m > 4) m = 1;
+										rotateSound = true;
+									}
+									// Logika rotasi blok ke arah sebaliknya
+									else if (e.keyCode === 81 || e.keyCode === 65) {
+										m--;
+										if (m < 1) m = 4;
+										rotateSound = true;
+									}
+
+									// Memeriksa apakah blok dapat bergerak atau tidak
+									if (canMove(p, x, y, m, PIECE_CONTROL)) {
+										// Memainkan suara pergerakan atau rotasi sesuai dengan logika di atas
+										if (moveSound) {
+											playMoveSound();
+										} else if (rotateSound) {
+											playRotateSound();
+										}
+
+										// Menghapus kelas dan atribut tertentu dari elemen kotak yang mewakili blok pada papan permainan
+										$('#board').find(".square[piece-id='" + PIECE_CONTROL + "']").removeClass("piece" + p).removeAttr("piece-id").removeAttr("piece-catch").removeAttr("piece-move");
+										// Menggambar blok yang telah dipindahkan atau dirotasi pada posisi baru
+										drawPiece(p, x, y, m, PIECE_CONTROL);
+										// Menambahkan atribut "piece-move" ke elemen kotak yang mewakili blok, menyimpan informasi rotasi
+										$('#board').find(".square[piece-id='" + PIECE_CONTROL + "'][piece-catch='yes']").attr("piece-move", m);
+									}
+								}
+							}
+						}
+					}
+				}
+			});
+		});
+	</script>
+
+	<title>Tetris - PAS WEB</title>
+</head>
+
+<body>
+
+	<!-- Container untuk elemen suara -->
+	<div id="sound"></div>
+
+	<!-- Container untuk elemen bantuan (help) -->
+	<div id="help">
+		<!-- Judul bantuan -->
+		<h2>Help</h2>
+		<!-- Tabel yang berisi petunjuk penggunaan tombol pada permainan Tetris -->
+		<table align="center" border="0" cellpadding="2" cellspacing="0">
+			<tbody>
+				<tr>
+					<!-- Kolom pertama berisi deskripsi tombol -->
+					<td>Arrow Left / Arrow Right : </td>
+					<!-- Kolom kedua berisi fungsi dari tombol tersebut -->
+					<td>Move Left / Move Right</td>
+				</tr>
+				<tr>
+					<td>Arrow Down : </td>
+					<td>Move Down</td>
+				</tr>
+				<tr>
+					<td>Arrow Up, CTRL, Space, S : </td>
+					<td>Rotate Right</td>
+				</tr>
+				<tr>
+					<td>Q, A : </td>
+					<td>Rotate Left</td>
+				</tr>
+				<tr>
+					<td colspan="2">&nbsp;</td>
+				</tr>
+				<tr>
+					<td>ESCAPE, ENTER, P : </td>
+					<td>PAUSE</td>
+				</tr>
+				<tr>
+					<td>DELETE, BACKSPACE : </td>
+					<td>SHOW / HIDE NEXT PIECE</td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+
+	<!-- Bagian beranda permainan (home) -->
+	<div id="home">
+		<!-- Judul permainan Tetris -->
+		<h1>Tetris</h1>
+		<!-- Subjudul permainan Tetris -->
+		<h2>Tetris - PAS WEB</h2>
+		<!-- Tahun rilis permainan Tetris -->
+		<h3>2023</h3>
+		<!-- Pesan "Tolong klik dimana saja!" yang awalnya tidak terlihat -->
+		<span class="start invisible">- Tolong klik dimana saja! -</span>
+
+		<!-- Tabel skor tertinggi -->
+		<div id="scores">
+			<h2>High scores</h2>
+			<!-- Tabel yang berisi skor dan nama pemain -->
+			<table align="center" border="0" cellpadding="2" cellspacing="0">
+				<thead>
+					<!-- Baris kepala tabel -->
+					<tr>
+						<!-- Kolom untuk menunjukkan peringkat -->
+						<th>Rank</th>
+						<!-- Kolom untuk menunjukkan skor -->
+						<th>Score</th>
+						<!-- Kolom untuk menunjukkan nama pemain -->
+						<th>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Name</th>
+					</tr>
+				</thead>
+				<tbody>
+					<!-- Baris-baris untuk menunjukkan skor dan nama pemain -->
+					<tr>
+						<td id="position1">1ST</td>
+						<td id="score1">0</td>
+						<td id="name1">-------</td>
+					</tr>
+					<tr>
+						<td id="position2">2ND</td>
+						<td id="score2">0</td>
+						<td id="name2">-------</td>
+					</tr>
+					<tr>
+						<td id="position3">3RD</td>
+						<td id="score3">0</td>
+						<td id="name3">-------</td>
+					</tr>
+					<tr>
+						<td id="position4">4TH</td>
+						<td id="score4">0</td>
+						<td id="name4">-------</td>
+					</tr>
+					<tr>
+						<td id="position5">5TH</td>
+						<td id="score5">0</td>
+						<td id="name5">-------</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+
+		<!-- Tombol bantuan (help) -->
+		<div class="help-button">- help -</div>
+
+		<!-- Tombol suara (sound) -->
+		<a class="sound" href="javascript:void(0);" data-sound="on"><img src="img/sound-on.png" alt="" border="0"></a>
+	</div>
+
+
+	<!-- Panel permainan Tetris -->
+	<div id="panel">
+		<!-- Judul permainan Tetris -->
+		<h1>Tetris</h1>
+
+		<!-- Papan permainan (board) -->
+		<div id="board"></div>
+
+		<!-- Informasi tingkat kesulitan (level) -->
+		<div id="level">
+			<h2>Level</h2>
+			<!-- Penunjuk level akan ditampilkan di sini -->
+			<span></span>
+		</div>
+
+		<!-- Informasi jumlah baris yang telah dihapus (lines) -->
+		<div id="lines">
+			<h2>Lines</h2>
+			<!-- Penunjuk jumlah baris akan ditampilkan di sini -->
+			<span></span>
+		</div>
+
+		<!-- Informasi skor pemain (score) -->
+		<div id="score">
+			<h2>Score</h2>
+			<!-- Penunjuk skor pemain akan ditampilkan di sini -->
+			<span></span>
+		</div>
+
+		<!-- Informasi blok berikutnya yang akan muncul (next) -->
+		<div id="next">
+			<h2>Next</h2>
+			<!-- Papan untuk menampilkan blok berikutnya -->
+			<span>
+				<div id="board-next"></div>
+			</span>
+		</div>
+
+		<!-- Tombol bantuan (help) -->
+		<div class="help-button">- help -</div>
+
+		<!-- Tombol suara (sound) -->
+		<a class="sound" href="javascript:void(0);" data-sound="on"><img src="img/sound-on.png" alt="" border="0"></a>
+	</div>
+
+	<!-- Panel kontrol permainan Tetris -->
+	<div id="control">
+		<!-- Tombol untuk memindahkan blok ke kiri (move-left) -->
+		<div class="move-left"></div>
+
+		<!-- Tombol untuk memindahkan blok ke kanan (move-right) -->
+		<div class="move-right"></div>
+
+		<!-- Tombol untuk memindahkan blok ke bawah (move-down) -->
+		<div class="move-down"></div>
+
+		<!-- Tombol untuk memutar blok (rotate) -->
+		<div class="rotate"></div>
+
+		<!-- Tombol untuk menghentikan permainan sementara (pause) -->
+		<div class="pause"></div>
+
+		<!-- Tombol untuk melihat blok berikutnya (view-next) -->
+		<div class="view-next not"></div>
+	</div>
+
+</body>
+
+</html>
